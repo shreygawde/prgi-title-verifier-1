@@ -1,6 +1,7 @@
 import re
 
 import jellyfish
+from metaphone import doublemetaphone
 from rapidfuzz import fuzz
 
 from app.rules import COMMON_AFFIXES, CROSS_LANGUAGE_EQUIVALENTS
@@ -29,8 +30,13 @@ def _phonetic_score(a: str, b: str) -> float:
     if not a or not b:
         return 0.0
     soundex_match = 100.0 if jellyfish.soundex(a) == jellyfish.soundex(b) else 0.0
-    metaphone_score = fuzz.ratio(jellyfish.metaphone(a), jellyfish.metaphone(b))
-    return max(soundex_match, metaphone_score)
+
+    a_codes = [c for c in doublemetaphone(a) if c]
+    b_codes = [c for c in doublemetaphone(b) if c]
+    dm_exact = 100.0 if set(a_codes) & set(b_codes) else 0.0
+    dm_fuzzy = fuzz.ratio(a_codes[0], b_codes[0]) if a_codes and b_codes else 0.0
+
+    return max(soundex_match, dm_exact, dm_fuzzy)
 
 
 class SimilarityResult:
@@ -74,13 +80,33 @@ def compare_titles(new_title: str, existing_title: str) -> SimilarityResult:
     return SimilarityResult(final_score, match_types)
 
 
+def fuzzy_signal(a: str, b: str) -> float:
+    return round(fuzz.ratio(normalize(a), normalize(b)) / 100, 4)
+
+
+def phonetic_signal(a: str, b: str) -> float:
+    return round(_phonetic_score(normalize(a).replace(" ", ""), normalize(b).replace(" ", "")) / 100, 4)
+
+
 def best_match(text: str, candidates: list[str]) -> tuple[str | None, float]:
-    best_title, best_score = None, 0.0
     norm_text = normalize(text)
     if not norm_text:
         return None, 0.0
+
+    canon_text = " ".join(canonicalize(tokenize(text)))
+    phonetic_text = norm_text.replace(" ", "")
+
+    best_title, best_score = None, 0.0
     for candidate in candidates:
-        score = fuzz.token_set_ratio(norm_text, normalize(candidate))
+        norm_candidate = normalize(candidate)
+        fuzzy_score = fuzz.token_set_ratio(norm_text, norm_candidate)
+
+        canon_candidate = " ".join(canonicalize(tokenize(candidate)))
+        canon_score = fuzz.token_set_ratio(canon_text, canon_candidate)
+
+        phonetic_score = _phonetic_score(phonetic_text, norm_candidate.replace(" ", ""))
+
+        score = max(fuzzy_score, canon_score, phonetic_score)
         if score > best_score:
             best_title, best_score = candidate, score
     return best_title, best_score

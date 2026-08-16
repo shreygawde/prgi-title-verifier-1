@@ -32,6 +32,12 @@ def test_title_combination_rejected(store):
     assert any(v.type == "TITLE_COMBINATION" for v in r.violations)
 
 
+def test_title_combination_with_phonetic_misspellings_rejected(store):
+    r = verify_title("Hinduw Indien Expres", "English", "Daily", store)
+    assert r.status == "REJECTED"
+    assert any(v.type == "TITLE_COMBINATION" for v in r.violations)
+
+
 def test_periodicity_modification_rejected(store):
     r = verify_title("Indian Express Daily", "English", "Daily", store)
     assert r.status == "REJECTED"

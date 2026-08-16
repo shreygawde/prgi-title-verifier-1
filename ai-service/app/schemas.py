@@ -28,3 +28,18 @@ class VerifyResponse(BaseModel):
     violations: list[Violation]
     matches: list[MatchResult]
     explanation: str
+
+
+class SimilarityRequest(BaseModel):
+    title: str
+    candidates: list[str]
+
+
+class SimilarityMatch(BaseModel):
+    title: str
+    fuzzy: float
+    phonetic: float
+
+
+class SimilarityResponse(BaseModel):
+    matches: list[SimilarityMatch]
