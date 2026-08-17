@@ -1,20 +1,16 @@
-import json
-from collections import defaultdict
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass
 from pathlib import Path
 
-import jellyfish
+import psycopg
+from dotenv import load_dotenv
+from pgvector.psycopg import register_vector
+from sentence_transformers import SentenceTransformer
 
-from app.similarity import tokenize
+env_path = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(env_path)
 
-DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "sample_titles.json"
-
-# Candidate-pruning threshold: below this corpus size a full scan is cheap
-# enough that indexing overhead isn't worth it. Above it, only titles
-# sharing a first-letter or first-token-soundex bucket with the query are
-# compared. This stands in for the DB-side indexing (trigram/soundex
-# index) that will replace it once titles live in Postgres.
-FULL_SCAN_LIMIT = 500
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 @dataclass
@@ -25,50 +21,47 @@ class TitleRecord:
     source: str  # "REGISTERED" or "PENDING_APPLICATION"
 
 
-@dataclass
 class TitleStore:
-    records: list[TitleRecord] = field(default_factory=list)
-    _first_letter_index: dict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
-    _soundex_index: dict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
-
-    def _index(self, idx: int, title: str) -> None:
-        tokens = tokenize(title)
-        if not tokens:
-            return
-        first_word = tokens[0]
-        self._first_letter_index[first_word[0]].append(idx)
-        self._soundex_index[jellyfish.soundex(first_word)].append(idx)
-
-    def add(self, title: str, language: str, periodicity: str, source: str) -> None:
-        self.records.append(TitleRecord(title, language, periodicity, source))
-        self._index(len(self.records) - 1, title)
+    def __init__(self):
+        self.model = SentenceTransformer('all-MiniLM-L6-v2')
 
     def add_pending(self, title: str, language: str, periodicity: str) -> None:
-        self.add(title, language, periodicity, source="PENDING_APPLICATION")
+        if not DATABASE_URL:
+            return
+        
+        embedding = self.model.encode(title).tolist()
+        with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO public.prgi_titles 
+                    (title, language, periodicity, source, embedding)
+                    VALUES (%s, %s, %s, %s, %s::vector)
+                    """,
+                    (title, language, periodicity, "PENDING_APPLICATION", str(embedding))
+                )
 
-    def all_titles(self) -> list[str]:
-        return [r.title for r in self.records]
+    def candidates(self, title: str, limit: int = 100) -> list[TitleRecord]:
+        if not DATABASE_URL:
+            return []
 
-    def candidates(self, title: str) -> list[TitleRecord]:
-        if len(self.records) <= FULL_SCAN_LIMIT:
-            return list(self.records)
-
-        tokens = tokenize(title)
-        if not tokens:
-            return list(self.records)
-        first_word = tokens[0]
-        idxs = set(self._first_letter_index.get(first_word[0], []))
-        idxs |= set(self._soundex_index.get(jellyfish.soundex(first_word), []))
-        return [self.records[i] for i in idxs]
-
-
-def load_sample_store() -> TitleStore:
-    store = TitleStore()
-    with open(DATA_FILE, encoding="utf-8") as f:
-        rows = json.load(f)
-    for row in rows:
-        store.add(row["title"], row["language"], row["periodicity"], source="REGISTERED")
-    return store
+        embedding = self.model.encode(title).tolist()
+        records = []
+        with psycopg.connect(DATABASE_URL) as conn:
+            register_vector(conn)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT title, language, periodicity, COALESCE(source, 'REGISTERED') as source
+                    FROM public.prgi_titles
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                    """,
+                    (str(embedding), limit)
+                )
+                for row in cur.fetchall():
+                    records.append(TitleRecord(title=row[0], language=row[1], periodicity=row[2], source=row[3]))
+        return records
 
 
-title_store = load_sample_store()
+title_store = TitleStore()
