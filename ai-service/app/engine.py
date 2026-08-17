@@ -47,9 +47,8 @@ def verify_title(
     # Example:
     # "Title is a trivial variation of existing title 'Gujarat Samachar'..."
     #
-    # This lets us show legitimate registered evidence even if the
-    # similarity score itself is low because generic words are deliberately
-    # down-weighted.
+    # This lets us show legitimate evidence even if the similarity score
+    # itself is low because generic words are deliberately down-weighted.
     guideline_titles: set[str] = set()
 
     for violation in violations:
@@ -69,14 +68,20 @@ def verify_title(
         if result.score > top_similarity:
             top_similarity = result.score
 
-        should_display = result.score >= SIMILARITY_DISPLAY_THRESHOLD
+        should_display = (
+            result.score >= SIMILARITY_DISPLAY_THRESHOLD
+        )
 
-        # If a registered title directly triggered a guideline violation,
-        # expose it as evidence even when its raw similarity is below the
-        # normal display threshold.
+        # If a title directly triggered a guideline violation,
+        # expose it as evidence even when its raw similarity is below
+        # the normal display threshold.
+        #
+        # This applies to BOTH registered titles and pending applications.
+        # A pending application can be the title that caused a guideline
+        # violation and should therefore still be visible under
+        # "Similar Applications".
         is_guideline_evidence = (
-            record.source == "REGISTERED"
-            and record.title in guideline_titles
+            record.title in guideline_titles
         )
 
         if should_display or is_guideline_evidence:
