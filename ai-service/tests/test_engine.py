@@ -1,7 +1,7 @@
 import pytest
 
 from app.engine import verify_title
-from app.store import load_sample_store
+from tests.fake_store import load_sample_store
 
 
 @pytest.fixture
