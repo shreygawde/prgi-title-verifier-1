@@ -173,7 +173,7 @@ function App() {
     setError(null);
 
     try {
-      const response = await fetch("http://localhost:8001/analyze", {
+      const response = await fetch("http://localhost:8002/analyze", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -5,6 +5,7 @@ class VerifyRequest(BaseModel):
     title: str
     language: str
     periodicity: str
+    application_number: str | None = None
 
 
 class Violation(BaseModel):

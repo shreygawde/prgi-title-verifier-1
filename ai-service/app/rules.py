@@ -42,6 +42,30 @@ COMMON_AFFIXES = {
     "monthly",
 }
 
+# These descriptors occur in many publication titles. They remain available
+# to the affix guideline checks above, but contribute only weakly to title
+# similarity so a shared "daily" or "news" is not treated as distinctive.
+GENERIC_PUBLICATION_TERMS = {
+    "akhbar",
+    "bulletin",
+    "chronicle",
+    "daily",
+    "express",
+    "gazette",
+    "herald",
+    "journal",
+    "monthly",
+    "news",
+    "newspaper",
+    "patrika",
+    "post",
+    "samachar",
+    "times",
+    "tribune",
+    "varta",
+    "weekly",
+}
+
 PERIODICITY_WORDS = {
     "daily",
     "weekly",

@@ -44,7 +44,8 @@ def analyze_title(payload: VerifyRequest):
         payload.title,
         payload.language,
         payload.periodicity,
-        title_store
+        title_store,
+        application_number=payload.application_number,
     )
 
 

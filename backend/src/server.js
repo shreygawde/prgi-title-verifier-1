@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const crypto = require("crypto");
 const pool = require("./db");
 
 const app = express();
@@ -40,14 +41,20 @@ app.get("/api/db-test", async (req, res) => {
 
 // Verify title
 app.post("/api/verify", async (req, res) => {
-  const { title, language, periodicity } = req.body;
+ const {
+  title,
+  language,
+  periodicity,
+  application_number,
+} = req.body;
 
   if (!title || !language || !periodicity) {
     return res.status(400).json({
       error: "title, language and periodicity are required",
     });
   }
-
+const currentApplicationNumber =
+  application_number || `APP-${crypto.randomUUID()}`;
   try {
     const response = await fetch(`${process.env.AI_SERVICE_URL}/analyze`, {
       method: "POST",
@@ -55,10 +62,11 @@ app.post("/api/verify", async (req, res) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        title,
-        language,
-        periodicity,
-      }),
+  title,
+  language,
+  periodicity,
+  application_number: currentApplicationNumber,
+}),
     });
 
     if (!response.ok) {
@@ -74,9 +82,10 @@ app.post("/api/verify", async (req, res) => {
     const result = await response.json();
 
     res.json({
-      ...result,
-      submitted_title: title,
-    });
+  ...result,
+  submitted_title: title,
+  application_number: currentApplicationNumber,
+});
   } catch (error) {
     console.error("Failed to connect to AI service:", error);
 
@@ -85,6 +94,7 @@ app.post("/api/verify", async (req, res) => {
     });
   }
 });
+
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
 });
