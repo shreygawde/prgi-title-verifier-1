@@ -27,35 +27,23 @@ const PRGI_BLUE = "#0B3B70";
 // so the UI tolerates several backend spellings. Kept muted/institutional
 // rather than bright pill-badge colors.
 const STATUS_CONFIG = {
-  no_significant_conflict: {
-    label: "No significant conflict",
-    text: "text-emerald-800",
-    border: "border-emerald-700",
-    bar: "bg-emerald-700",
-  },
-  no_conflict: {
-    label: "No significant conflict",
-    text: "text-emerald-800",
-    border: "border-emerald-700",
-    bar: "bg-emerald-700",
-  },
-  review_advised: {
-    label: "Review advised",
-    text: "text-amber-800",
-    border: "border-amber-600",
-    bar: "bg-amber-600",
-  },
-  potential_conflict: {
-    label: "Potential conflict",
-    text: "text-orange-800",
-    border: "border-orange-700",
-    bar: "bg-orange-700",
-  },
-  high_confidence_conflict: {
-    label: "High-confidence conflict",
+  rejected: {
+    label: "Rejected",
     text: "text-red-800",
     border: "border-red-700",
     bar: "bg-red-700",
+  },
+  likely_eligible: {
+    label: "Likely Eligible",
+    text: "text-emerald-800",
+    border: "border-emerald-700",
+    bar: "bg-emerald-700",
+  },
+  needs_review: {
+    label: "Needs Review",
+    text: "text-amber-800",
+    border: "border-amber-600",
+    bar: "bg-amber-600",
   },
 };
 
@@ -66,51 +54,6 @@ const DEFAULT_STATUS = {
   bar: "bg-slate-500",
 };
 
-const APPLICATION_STATUS_STYLES = {
-  PENDING: "border-amber-600 text-amber-800",
-  APPROVED: "border-emerald-700 text-emerald-800",
-  REJECTED: "border-red-700 text-red-800",
-  WITHDRAWN: "border-slate-400 text-slate-600",
-};
-
-// ---------------------------------------------------------------------------
-// MOCK DATA — "Your Application History"
-// ---------------------------------------------------------------------------
-// Isolated placeholder data source for the signed-in applicant's own
-// application history. User identity/authentication is not wired up yet, so
-// this stands in for a future call such as GET /api/applications/mine.
-// It is intentionally kept separate from the /api/verify response and from
-// `applicationMatches` (which come back embedded in a verification result).
-// Swap MOCK_MY_APPLICATIONS for a fetched value once an auth/user context
-// and an applications endpoint exist — the rendering below does not need to
-// change, only the data source.
-const MOCK_MY_APPLICATIONS = [
-  {
-    application_number: "PRGI/2026/014822",
-    title: "Konkan Coastal Herald",
-    submitted_date: "2026-07-02",
-    status: "PENDING",
-  },
-  {
-    application_number: "PRGI/2026/012190",
-    title: "Sahyadri Business Weekly",
-    submitted_date: "2026-05-18",
-    status: "APPROVED",
-  },
-  {
-    application_number: "PRGI/2025/098765",
-    title: "Deccan Metro Times",
-    submitted_date: "2025-11-30",
-    status: "REJECTED",
-  },
-  {
-    application_number: "PRGI/2025/087341",
-    title: "Kolhapur Kisan Sandesh",
-    submitted_date: "2025-09-04",
-    status: "WITHDRAWN",
-  },
-];
-
 function normalizeStatusKey(status) {
   if (!status) return null;
   return String(status).trim().toLowerCase().replace(/\s+/g, "_");
@@ -120,21 +63,13 @@ function formatScore(score) {
   if (score === null || score === undefined || Number.isNaN(Number(score))) {
     return null;
   }
-  const num = Number(score);
-  // Accept either 0-1 or 0-100 scales.
-  const pct = num <= 1 ? num * 100 : num;
-  return Math.round(pct);
+  // The AI service returns scores on a 0-100 scale already — display as-is.
+  return Math.round(Number(score));
 }
 
-function formatDate(value) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+function formatMatchTypes(matchTypes) {
+  if (!Array.isArray(matchTypes) || matchTypes.length === 0) return "—";
+  return matchTypes.join(", ");
 }
 
 function formatGeneratedTimestamp() {
@@ -238,7 +173,7 @@ function App() {
     setError(null);
 
     try {
-      const response = await fetch("http://localhost:5000/api/verify", {
+      const response = await fetch("http://localhost:8001/analyze", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -278,8 +213,13 @@ function App() {
   const statusKey = normalizeStatusKey(result?.status);
   const statusConfig = (statusKey && STATUS_CONFIG[statusKey]) || (result ? DEFAULT_STATUS : null);
 
-  const registeredMatches = result?.registered_matches ?? result?.matches ?? [];
-  const applicationMatches = result?.application_matches ?? [];
+  const allMatches = result?.matches ?? [];
+  const registeredMatches = allMatches.filter(
+    (match) => match.source === "REGISTERED"
+  );
+  const applicationMatches = allMatches.filter(
+    (match) => match.source === "PENDING_APPLICATION"
+  );
   const signals = result?.signals ?? {};
   const overallScore = formatScore(result?.verification_score ?? result?.score);
 
@@ -498,6 +438,29 @@ function App() {
                   )}
                 </div>
 
+                {Array.isArray(result.violations) && result.violations.length > 0 && (
+                  <div className="mt-5 border-t border-slate-200 pt-5">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                      Violations
+                    </p>
+                    <ul className="mt-2 space-y-2">
+                      {result.violations.map((violation, i) => (
+                        <li
+                          key={i}
+                          className="border border-red-200 bg-red-50 px-3 py-2.5"
+                        >
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-red-700">
+                            {violation.type ?? "Violation"}
+                          </span>
+                          <p className="mt-0.5 text-[13.5px] leading-relaxed text-red-800">
+                            {violation.message ?? "—"}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {result.explanation && (
                   <div className="mt-5 border-t border-slate-200 pt-5">
                     <p className="text-[11px] uppercase tracking-wide text-slate-400">
@@ -549,27 +512,26 @@ function App() {
               <EmptyRow>No significant registered-title matches found.</EmptyRow>
             ) : (
               <div className="overflow-x-auto border border-slate-200">
-                <table className="w-full min-w-[720px] border-collapse text-left text-[13px]">
+                <table className="w-full min-w-[640px] border-collapse text-left text-[13px]">
                   <thead>
                     <tr className="border-b border-slate-300 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                       <th className="px-4 py-3 font-medium">Publication Title</th>
                       <th className="px-4 py-3 font-medium">Language</th>
                       <th className="px-4 py-3 font-medium">Periodicity</th>
-                      <th className="px-4 py-3 font-medium">Registration No.</th>
-                      <th className="px-4 py-3 font-medium">Publisher</th>
+                      <th className="px-4 py-3 font-medium">Match Type</th>
                       <th className="px-4 py-3 font-medium">Similarity</th>
                     </tr>
                   </thead>
                   <tbody>
                     {registeredMatches.map((match, i) => {
-                      const score = formatScore(match.similarity ?? match.score);
+                      const score = formatScore(match.score);
                       return (
                         <tr
-                          key={match.id ?? i}
+                          key={i}
                           className="border-b border-slate-100 last:border-0"
                         >
                           <td className="px-4 py-3 font-medium text-slate-900">
-                            {match.title}
+                            {match.title ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-slate-600">
                             {match.language ?? "—"}
@@ -577,11 +539,8 @@ function App() {
                           <td className="px-4 py-3 text-slate-600">
                             {match.periodicity ?? "—"}
                           </td>
-                          <td className="px-4 py-3 font-mono text-[12px] text-slate-600">
-                            {match.registration_number ?? "—"}
-                          </td>
                           <td className="px-4 py-3 text-slate-600">
-                            {match.publisher ?? "—"}
+                            {formatMatchTypes(match.match_types)}
                           </td>
                           <td className="px-4 py-3 tabular-nums text-slate-600">
                             {score !== null ? `${score}%` : "—"}
@@ -603,53 +562,42 @@ function App() {
           <section aria-labelledby="applications-heading" className="mt-12">
             <SectionHeading
               title="Similar Applications"
-              description="Titles submitted previously or currently in the application history, shown for reference. A similar pending application is a reference point, not a rejection."
+              description="Titles from applications currently pending with PRGI that resemble the proposed title, shown for reference. A similar pending application is a reference point, not a rejection."
             />
 
             {applicationMatches.length === 0 ? (
               <EmptyRow>No similar applications found.</EmptyRow>
             ) : (
               <div className="overflow-x-auto border border-slate-200">
-                <table className="w-full min-w-[760px] border-collapse text-left text-[13px]">
+                <table className="w-full min-w-[640px] border-collapse text-left text-[13px]">
                   <thead>
                     <tr className="border-b border-slate-300 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                      <th className="px-4 py-3 font-medium">Application No.</th>
                       <th className="px-4 py-3 font-medium">Proposed Title</th>
-                      <th className="px-4 py-3 font-medium">Applicant</th>
-                      <th className="px-4 py-3 font-medium">Submitted</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Language</th>
+                      <th className="px-4 py-3 font-medium">Periodicity</th>
+                      <th className="px-4 py-3 font-medium">Match Type</th>
                       <th className="px-4 py-3 font-medium">Similarity</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {applicationMatches.map((app, i) => {
-                      const score = formatScore(app.similarity ?? app.score);
-                      const statusStyle =
-                        APPLICATION_STATUS_STYLES[app.status] ??
-                        "border-slate-400 text-slate-600";
+                    {applicationMatches.map((match, i) => {
+                      const score = formatScore(match.score);
                       return (
                         <tr
-                          key={app.id ?? app.application_number ?? i}
+                          key={i}
                           className="border-b border-slate-100 last:border-0"
                         >
-                          <td className="px-4 py-3 font-mono text-[12px] text-slate-600">
-                            {app.application_number ?? "—"}
-                          </td>
                           <td className="px-4 py-3 font-medium text-slate-900">
-                            {app.title ?? app.proposed_title}
+                            {match.title ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-slate-600">
-                            {app.applicant_name ?? "—"}
+                            {match.language ?? "—"}
                           </td>
                           <td className="px-4 py-3 text-slate-600">
-                            {formatDate(app.submitted_date)}
+                            {match.periodicity ?? "—"}
                           </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide ${statusStyle}`}
-                            >
-                              {app.status ?? "—"}
-                            </span>
+                          <td className="px-4 py-3 text-slate-600">
+                            {formatMatchTypes(match.match_types)}
                           </td>
                           <td className="px-4 py-3 tabular-nums text-slate-600">
                             {score !== null ? `${score}%` : "—"}
@@ -663,77 +611,6 @@ function App() {
             )}
           </section>
         )}
-        {/* ------------------------------------------------------------------ */}
-        {/* YOUR APPLICATION HISTORY                                           */}
-        {/* ------------------------------------------------------------------ */}
-        <section aria-labelledby="my-applications-heading" className="mt-12">
-          <SectionHeading
-            title="Your Application History"
-            description="Applications you have submitted to PRGI and their current lifecycle status. This list is specific to your account and separate from the similarity results above."
-          />
-
-          {MOCK_MY_APPLICATIONS.length === 0 ? (
-            <EmptyRow>You have not submitted any applications yet.</EmptyRow>
-          ) : (
-            <div className="overflow-x-auto border border-slate-200">
-              <table className="w-full min-w-[680px] border-collapse text-left text-[13px]">
-                <thead>
-                  <tr className="border-b border-slate-300 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                    <th className="px-4 py-3 font-medium">Application No.</th>
-                    <th className="px-4 py-3 font-medium">Proposed Title</th>
-                    <th className="px-4 py-3 font-medium">Submitted</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {MOCK_MY_APPLICATIONS.map((app, i) => {
-                    const isPending = app.status === "PENDING";
-                    const statusStyle =
-                      APPLICATION_STATUS_STYLES[app.status] ??
-                      "border-slate-400 text-slate-600";
-                    return (
-                      <tr
-                        key={app.application_number ?? i}
-                        className={`border-b border-slate-100 last:border-0 ${
-                          isPending ? "bg-amber-50/50" : ""
-                        }`}
-                        style={
-                          isPending
-                            ? { boxShadow: "inset 3px 0 0 #D97706" }
-                            : undefined
-                        }
-                      >
-                        <td className="px-4 py-3 font-mono text-[12px] text-slate-600">
-                          {app.application_number ?? "—"}
-                        </td>
-                        <td
-                          className={`px-4 py-3 text-slate-900 ${
-                            isPending ? "font-semibold" : "font-medium"
-                          }`}
-                        >
-                          {app.title}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {formatDate(app.submitted_date)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${statusStyle}`}
-                          >
-                            {isPending && (
-                              <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-600 align-middle" />
-                            )}
-                            {app.status ?? "—"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
       </main>
 
       <footer className="mt-16 w-full border-t border-slate-200">

@@ -49,41 +49,42 @@ app.post("/api/verify", async (req, res) => {
   }
 
   try {
-    const result = await pool.query(
-      `
-      SELECT
-        id,
+    const response = await fetch(`${process.env.AI_SERVICE_URL}/analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
         title,
-        registration_number,
         language,
         periodicity,
-        publisher,
-        owner,
-        publication_state,
-        publication_district
-      FROM public.prgi_titles
-      WHERE language = $1
-      ORDER BY id
-      LIMIT 100
-      `,
-      [language]
-    );
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      console.error("AI service returned an error:", errorText);
+
+      return res.status(502).json({
+        error: "AI verification service failed",
+      });
+    }
+
+    const result = await response.json();
 
     res.json({
-      status: "CANDIDATES_FOUND",
-      proposed_title: title,
-      candidates_found: result.rows.length,
-      matches: result.rows,
+      ...result,
+      submitted_title: title,
     });
   } catch (error) {
-    console.error("Verification database query failed:", error);
+    console.error("Failed to connect to AI service:", error);
 
-    res.status(500).json({
-      error: "Failed to query PRGI database",
+    res.status(502).json({
+      error: "Unable to connect to AI verification service",
     });
   }
 });
-
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
 });

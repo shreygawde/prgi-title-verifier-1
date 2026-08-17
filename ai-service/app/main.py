@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.engine import verify_title
 from app.schemas import (
@@ -11,9 +12,21 @@ from app.schemas import (
 from app.similarity import fuzzy_signal, phonetic_signal
 from app.store import title_store
 
+
 app = FastAPI(
     title="PRGI Title Verification AI Service",
     version="0.1.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -27,7 +40,12 @@ def health():
 
 @app.post("/analyze", response_model=VerifyResponse)
 def analyze_title(payload: VerifyRequest):
-    return verify_title(payload.title, payload.language, payload.periodicity, title_store)
+    return verify_title(
+        payload.title,
+        payload.language,
+        payload.periodicity,
+        title_store
+    )
 
 
 @app.post("/similarity", response_model=SimilarityResponse)
